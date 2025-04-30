@@ -9,6 +9,8 @@ Run
 
 `make HelloDrone -j$(nproc)`
 
+Change IP Address in main.cpp of the HelloDrone folder
+
 
 ## AirSim announcement: This repository will be archived in the coming year 
 
