@@ -19,6 +19,9 @@ include_directories(
 )
 
 AddExecutableSource()
+
+find_package(Eigen3 3.3 REQUIRED)
+target_link_libraries(${PROJECT_NAME} Eigen3::Eigen)
 			
 CommonTargetLink()
 target_link_libraries(${PROJECT_NAME} AirLib)

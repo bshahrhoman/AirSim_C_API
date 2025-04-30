@@ -5,143 +5,85 @@
 STRICT_MODE_OFF
 #ifndef RPCLIB_MSGPACK
 #define RPCLIB_MSGPACK clmdep_msgpack
-#endif // !RPCLIB_MSGPACK
+#endif
 #include "rpc/rpc_error.h"
 STRICT_MODE_ON
 
 #include "vehicles/multirotor/api/MultirotorRpcLibClient.hpp"
 #include "common/common_utils/FileSystem.hpp"
 #include <iostream>
-#include <chrono>
+#include <fstream>
 
-int main()
-{
-    using namespace msr::airlib;
+using namespace msr::airlib;
 
-    msr::airlib::MultirotorRpcLibClient client;
-    typedef ImageCaptureBase::ImageRequest ImageRequest;
-    typedef ImageCaptureBase::ImageResponse ImageResponse;
-    typedef ImageCaptureBase::ImageType ImageType;
-    typedef common_utils::FileSystem FileSystem;
+Vector3r getLocalPosition(MultirotorRpcLibClient &client) {
+    // simGetVehiclePose returns the current Pose (position+orientation)
+    auto pose = client.simGetVehiclePose();
+    return pose.position;
+}
 
+// Fetches the vehicle's attitude (roll, pitch, yaw) in degrees using the Pose API
+std::tuple<float, float, float> getAttitudeDegrees(MultirotorRpcLibClient &client) {
+    auto pose = client.simGetVehiclePose();
+    Quaternionr ori = pose.orientation;
+    float pitch, roll, yaw;
+    VectorMath::toEulerianAngle(ori, pitch, roll, yaw);
+    const float rad2deg = 180.0f / static_cast<float>(M_PIf);
+    return std::make_tuple(roll * rad2deg, pitch * rad2deg, yaw * rad2deg);
+}
+
+// Captures a downward image from the specified camera name and returns raw uint8 data
+std::vector<uint8_t> captureDownwardImage(MultirotorRpcLibClient &client,
+                                          const std::string &camera_name,
+                                          int &out_width, int &out_height) {
+    std::vector<ImageCaptureBase::ImageRequest> requests;
+    // false=pixels as float, true=compressed
+    requests.emplace_back(camera_name, ImageCaptureBase::ImageType::Scene, false, true);
+    auto responses = client.simGetImages(requests);
+    if (responses.empty()) {
+        throw std::runtime_error("No images received from camera " + camera_name);
+    }
+    out_width = responses[0].width;
+    out_height = responses[0].height;
+    return responses[0].image_data_uint8;
+}
+
+int main() {
+    // 1) Connect with explicit IP (and default RPC port 41451)
+    // Change to IP of SITL Instance
+    MultirotorRpcLibClient client("172.24.192.1");
     try {
         client.confirmConnection();
+        std::cout << "Connected to AirSim at 172.24.192.1" << std::endl;
 
-        std::cout << "Press Enter to get FPV image" << std::endl;
-        std::cin.get();
-        const std::vector<ImageRequest> request{ ImageRequest("0", ImageType::Scene), ImageRequest("1", ImageType::DepthPlanar, true) };
-        const std::vector<ImageResponse>& response = client.simGetImages(request);
-        std::cout << "# of images received: " << response.size() << std::endl;
+        // 2) Get and print local position
+        auto pos = getLocalPosition(client);
+        std::cout << "Vehicle position (NED): x=" << pos.x()
+                  << ", y=" << pos.y() << ", z=" << pos.z() << std::endl;
 
-        if (!response.size()) {
-            std::cout << "Enter path with ending separator to save images (leave empty for no save)" << std::endl;
-            std::string path;
-            std::getline(std::cin, path);
+        // 3) Get and print attitude
+        auto [roll_deg, pitch_deg, yaw_deg] = getAttitudeDegrees(client);
+        std::cout << "Vehicle attitude (deg): roll=" << roll_deg
+                  << ", pitch=" << pitch_deg
+                  << ", yaw=" << yaw_deg << std::endl;
 
-            for (const ImageResponse& image_info : response) {
-                std::cout << "Image uint8 size: " << image_info.image_data_uint8.size() << std::endl;
-                std::cout << "Image float size: " << image_info.image_data_float.size() << std::endl;
-
-                if (path != "") {
-                    std::string file_path = FileSystem::combine(path, std::to_string(image_info.time_stamp));
-                    if (image_info.pixels_as_float) {
-                        Utils::writePFMfile(image_info.image_data_float.data(), image_info.width, image_info.height, file_path + ".pfm");
-                    }
-                    else {
-                        std::ofstream file(file_path + ".png", std::ios::binary);
-                        file.write(reinterpret_cast<const char*>(image_info.image_data_uint8.data()), image_info.image_data_uint8.size());
-                        file.close();
-                    }
-                }
-            }
-        }
-
-        std::cout << "Press Enter to arm the drone" << std::endl;
-        std::cin.get();
-
-        client.enableApiControl(true);
-        client.armDisarm(true);
-
-        auto barometer_data = client.getBarometerData();
-        std::cout << "Barometer data \n"
-                  << "barometer_data.time_stamp \t" << barometer_data.time_stamp << std::endl
-                  << "barometer_data.altitude \t" << barometer_data.altitude << std::endl
-                  << "barometer_data.pressure \t" << barometer_data.pressure << std::endl
-                  << "barometer_data.qnh \t" << barometer_data.qnh << std::endl;
-
-        auto imu_data = client.getImuData();
-        std::cout << "IMU data \n"
-                  << "imu_data.time_stamp \t" << imu_data.time_stamp << std::endl
-                  << "imu_data.orientation \t" << imu_data.orientation << std::endl
-                  << "imu_data.angular_velocity \t" << imu_data.angular_velocity << std::endl
-                  << "imu_data.linear_acceleration \t" << imu_data.linear_acceleration << std::endl;
-
-        auto gps_data = client.getGpsData();
-        std::cout << "GPS data \n"
-                  << "gps_data.time_stamp \t" << gps_data.time_stamp << std::endl
-                  << "gps_data.gnss.time_utc \t" << gps_data.gnss.time_utc << std::endl
-                  << "gps_data.gnss.geo_point \t" << gps_data.gnss.geo_point << std::endl
-                  << "gps_data.gnss.eph \t" << gps_data.gnss.eph << std::endl
-                  << "gps_data.gnss.epv \t" << gps_data.gnss.epv << std::endl
-                  << "gps_data.gnss.velocity \t" << gps_data.gnss.velocity << std::endl
-                  << "gps_data.gnss.fix_type \t" << gps_data.gnss.fix_type << std::endl;
-
-        auto magnetometer_data = client.getMagnetometerData();
-        std::cout << "Magnetometer data \n"
-                  << "magnetometer_data.time_stamp \t" << magnetometer_data.time_stamp << std::endl
-                  << "magnetometer_data.magnetic_field_body \t" << magnetometer_data.magnetic_field_body << std::endl;
-        // << "magnetometer_data.magnetic_field_covariance" << magnetometer_data.magnetic_field_covariance // not implemented in sensor
-
-        std::cout << "Press Enter to takeoff" << std::endl;
-        std::cin.get();
-        float takeoff_timeout = 5;
-        client.takeoffAsync(takeoff_timeout)->waitOnLastTask();
-
-        // switch to explicit hover mode so that this is the fall back when
-        // move* commands are finished.
-        std::this_thread::sleep_for(std::chrono::duration<double>(5));
-        client.hoverAsync()->waitOnLastTask();
-
-        std::cout << "Press Enter to fly in a 10m box pattern at 3 m/s velocity" << std::endl;
-        std::cin.get();
-        // moveByVelocityZ is an offboard operation, so we need to set offboard mode.
-        client.enableApiControl(true);
-
-        auto position = client.getMultirotorState().getPosition();
-        float z = position.z(); // current position (NED coordinate system).
-        constexpr float speed = 3.0f;
-        constexpr float size = 10.0f;
-        constexpr float duration = size / speed;
-        DrivetrainType drivetrain = DrivetrainType::ForwardOnly;
-        YawMode yaw_mode(true, 0);
-
-        std::cout << "moveByVelocityZ(" << speed << ", 0, " << z << "," << duration << ")" << std::endl;
-        client.moveByVelocityZAsync(speed, 0, z, duration, drivetrain, yaw_mode);
-        std::this_thread::sleep_for(std::chrono::duration<double>(duration));
-        std::cout << "moveByVelocityZ(0, " << speed << "," << z << "," << duration << ")" << std::endl;
-        client.moveByVelocityZAsync(0, speed, z, duration, drivetrain, yaw_mode);
-        std::this_thread::sleep_for(std::chrono::duration<double>(duration));
-        std::cout << "moveByVelocityZ(" << -speed << ", 0, " << z << "," << duration << ")" << std::endl;
-        client.moveByVelocityZAsync(-speed, 0, z, duration, drivetrain, yaw_mode);
-        std::this_thread::sleep_for(std::chrono::duration<double>(duration));
-        std::cout << "moveByVelocityZ(0, " << -speed << "," << z << "," << duration << ")" << std::endl;
-        client.moveByVelocityZAsync(0, -speed, z, duration, drivetrain, yaw_mode);
-        std::this_thread::sleep_for(std::chrono::duration<double>(duration));
-
-        client.hoverAsync()->waitOnLastTask();
-
-        std::cout << "Press Enter to land" << std::endl;
-        std::cin.get();
-        client.landAsync()->waitOnLastTask();
-
-        std::cout << "Press Enter to disarm" << std::endl;
-        std::cin.get();
-        client.armDisarm(false);
+        // 4) Capture and save downward image for debugging
+        int width, height;
+        auto image_data = captureDownwardImage(client, "3", width, height);
+        std::string filename = "downward_view.png";
+        std::ofstream file(filename, std::ios::binary);
+        file.write(reinterpret_cast<const char *>(image_data.data()), image_data.size());
+        file.close();
+        std::cout << "Captured image " << width << "x" << height
+                  << " and saved to " << filename << std::endl;
     }
-    catch (rpc::rpc_error& e) {
-        const auto msg = e.get_error().as<std::string>();
-        std::cout << "Exception raised by the API, something went wrong." << std::endl
-                  << msg << std::endl;
+    catch (rpc::rpc_error &e) {
+        std::cerr << "RPC Error: " << e.get_error().as<std::string>() << std::endl;
+        return -1;
+    }
+    catch (const std::exception &ex) {
+        std::cerr << "Exception: " << ex.what() << std::endl;
+        return -1;
     }
 
     return 0;

@@ -50,7 +50,7 @@ else #linux
         software-properties-common \
         wget \
         libvulkan1 \
-        vulkan-utils
+        vulkan-tools
 
     #install clang and build tools
     VERSION=$(lsb_release -rs | cut -d. -f1)
@@ -60,7 +60,7 @@ else #linux
         wget -O - http://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
         sudo apt-get update
     fi
-    sudo apt-get install -y clang-8 clang++-8 libc++-8-dev libc++abi-8-dev
+    sudo apt-get install -y clang libc++-dev libc++abi-dev llvm-dev build-essential
 fi
 
 if ! which cmake; then
@@ -148,34 +148,6 @@ if [ ! -d "external/rpclib/rpclib-2.3.0" ]; then
     mkdir -p "external/rpclib"
     unzip -q v2.3.0.zip -d external/rpclib
     rm v2.3.0.zip
-fi
-
-# Download high-polycount SUV model
-if $downloadHighPolySuv; then
-    if [ ! -d "Unreal/Plugins/AirSim/Content/VehicleAdv" ]; then
-        mkdir -p "Unreal/Plugins/AirSim/Content/VehicleAdv"
-    fi
-    if [ ! -d "Unreal/Plugins/AirSim/Content/VehicleAdv/SUV/v1.2.0" ]; then
-            echo "*********************************************************************************************"
-            echo "Downloading high-poly car assets.... The download is ~37MB and can take some time."
-            echo "To install without this assets, re-run setup.sh with the argument --no-full-poly-car"
-            echo "*********************************************************************************************"
-
-            if [ -d "suv_download_tmp" ]; then
-                rm -rf "suv_download_tmp"
-            fi
-            mkdir -p "suv_download_tmp"
-            cd suv_download_tmp
-            wget  https://github.com/Microsoft/AirSim/releases/download/v1.2.0/car_assets.zip
-            if [ -d "../Unreal/Plugins/AirSim/Content/VehicleAdv/SUV" ]; then
-                rm -rf "../Unreal/Plugins/AirSim/Content/VehicleAdv/SUV"
-            fi
-            unzip -q car_assets.zip -d ../Unreal/Plugins/AirSim/Content/VehicleAdv
-            cd ..
-            rm -rf "suv_download_tmp"
-    fi
-else
-    echo "### Not downloading high-poly car asset (--no-full-poly-car). The default unreal vehicle will be used."
 fi
 
 echo "Installing Eigen library..."

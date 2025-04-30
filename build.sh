@@ -67,8 +67,8 @@ else
         export CC="gcc-8"
         export CXX="g++-8"
     else
-        export CC="clang-8"
-        export CXX="clang++-8"
+        export CC="clang"
+        export CXX="clang++"
     fi
 fi
 
@@ -117,7 +117,8 @@ pushd $build_dir  >/dev/null
 # final linking of the binaries can fail due to a missing libc++abi library
 # (happens on Fedora, see https://bugzilla.redhat.com/show_bug.cgi?id=1332306).
 # So we only build the libraries here for now
-make -j"$(nproc)"
+make -j"$(nproc)" VERBOSE=1
+ls build_release/output/lib
 popd >/dev/null
 
 mkdir -p AirLib/lib/x64/$folder_name
@@ -134,13 +135,6 @@ rsync -a --delete MavLinkCom/include AirLib/deps/MavLinkCom
 rsync -a --delete AirLib Unreal/Plugins/AirSim/Source
 rm -rf Unreal/Plugins/AirSim/Source/AirLib/src
 
-# Update all environment projects
-for d in Unreal/Environments/* ; do
-    [ -L "${d%/}" ] && continue
-    $d/clean.sh
-    mkdir -p $d/Plugins
-    rsync -a --delete Unreal/Plugins/AirSim $d/Plugins
-done
 
 set +x
 
